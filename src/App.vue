@@ -418,7 +418,6 @@ async function actualizarDatos() {
   letter-spacing: 0.025em;
 }
 
-/* Ajustes para los paneles internos */
 :deep(.authors-section),
 :deep(.publishers-section) {
   background: transparent;
