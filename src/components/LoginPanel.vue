@@ -2,9 +2,12 @@
 import { ref, computed } from "vue";
 
 type LoginBody = { gmail: string; password: string };
+type RegisterBody = { gmail: string; password: string; name?: string };
 type LoginOk = { _id: string; gmail: string; name: string | null };
 type LoginErr = { error: string };
 
+const isRegister = ref(false);          // 👈 alterna entre login y registro
+const name = ref("");                   // 👈 visible solo en registro
 const gmail = ref("");
 const password = ref("");
 const showPassword = ref(false);
@@ -19,7 +22,10 @@ const isValidEmail = (v: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim().toLowerCase());
 
 const isFormValid = computed(() => {
-    return isValidEmail(gmail.value) && password.value.trim().length >= 4;
+    const okEmail = isValidEmail(gmail.value);
+    const okPass = password.value.trim().length >= 4;
+    const okName = isRegister.value ? name.value.trim().length >= 2 : true;
+    return okEmail && okPass && okName;
 });
 
 function clearMessages() {
@@ -27,31 +33,48 @@ function clearMessages() {
     success.value = null;
 }
 
-async function doLogin() {
-    if (!isFormValid.value || loading.value) return;
-    clearMessages();
-    loading.value = true;
-
-    const body: LoginBody = {
+function fillBody() {
+    const base = {
         gmail: gmail.value.trim().toLowerCase(),
         password: password.value,
     };
+    return isRegister.value
+        ? ({ ...base, name: name.value.trim(), action: "register" } as RegisterBody & { action: "register" })
+        : (base as LoginBody);
+}
+
+async function submit() {
+    if (!isFormValid.value || loading.value) return;
+    clearMessages();
+    loading.value = true;
 
     try {
         const res = await fetch(`${API_BASE}/.netlify/functions/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
+            body: JSON.stringify(fillBody()),
         });
 
-        const data = (await res.json()) as LoginOk | LoginErr;
+        const data = (await res.json()) as LoginOk | LoginErr | (LoginOk & { message?: string });
 
         if (!res.ok) {
-            throw new Error((data as LoginErr)?.error || "Error de autenticación");
+            throw new Error((data as LoginErr)?.error || (data as any)?.message || "Solicitud fallida");
         }
 
-        localStorage.setItem("auth:user", JSON.stringify(data));
-        success.value = "¡Inicio de sesión exitoso!";
+        // Guardar sesión
+        localStorage.setItem("auth:user", JSON.stringify({
+            _id: (data as LoginOk)._id,
+            gmail: (data as LoginOk).gmail,
+            name: (data as LoginOk).name ?? null,
+        }));
+
+        success.value = isRegister.value ? "✅ Registro exitoso. ¡Bienvenido!" : "¡Inicio de sesión exitoso!";
+        // Notificar a la app que ya hay sesión (si la app escucha este evento)
+        window.dispatchEvent(new CustomEvent("auth:login", { detail: data }));
+
+        // Opcional: limpiar el form (deja el correo por comodidad)
+        if (isRegister.value) name.value = "";
+        password.value = "";
     } catch (e: any) {
         error.value =
             e?.message === "Failed to fetch"
@@ -69,9 +92,12 @@ async function doLogin() {
             <header class="card-header">
                 <h2 class="title">
                     <span class="icon">🔐</span>
-                    Iniciar Sesión
+                    {{ isRegister ? "Crear Cuenta" : "Iniciar Sesión" }}
                 </h2>
-                <p class="subtitle">Accede con tu correo y contraseña</p>
+                <p class="subtitle">
+                    {{ isRegister ? "Regístrate para comenzar a usar el sistema" : "Accede con tu correo y contraseña"
+                    }}
+                </p>
             </header>
 
             <div v-if="error" class="alert alert-error">
@@ -84,7 +110,15 @@ async function doLogin() {
                 <span>{{ success }}</span>
             </div>
 
-            <form class="form" @submit.prevent="doLogin">
+            <form class="form" @submit.prevent="submit">
+                <!-- Nombre (solo en registro) -->
+                <div class="form-group" v-if="isRegister">
+                    <label for="name">Nombre</label>
+                    <input id="name" v-model="name" autocomplete="name" placeholder="Tu nombre"
+                        :class="{ invalid: isRegister && name && name.trim().length < 2 }" required />
+                    <small class="hint">Mínimo 2 caracteres</small>
+                </div>
+
                 <div class="form-group">
                     <label for="gmail">Correo</label>
                     <input id="gmail" type="email" v-model="gmail" autocomplete="email"
@@ -97,7 +131,8 @@ async function doLogin() {
                     <label for="password">Contraseña</label>
                     <div class="password-box">
                         <input id="password" :type="showPassword ? 'text' : 'password'" v-model="password"
-                            autocomplete="current-password" placeholder="••••••••" minlength="4" required />
+                            :autocomplete="isRegister ? 'new-password' : 'current-password'" placeholder="••••••••"
+                            minlength="4" required />
                         <button type="button" class="toggle-btn" @click="showPassword = !showPassword"
                             :aria-pressed="showPassword" :title="showPassword ? 'Ocultar' : 'Mostrar'">
                             {{ showPassword ? "🙈" : "👁️" }}
@@ -108,13 +143,17 @@ async function doLogin() {
 
                 <button class="btn btn-primary" type="submit" :disabled="!isFormValid || loading">
                     <span v-if="loading" class="spinner" aria-hidden="true">⏳</span>
-                    {{ loading ? "Ingresando..." : "Ingresar" }}
+                    {{ loading ? (isRegister ? "Creando..." : "Ingresando...") : (isRegister ? "Crear Cuenta" :
+                    "Ingresar") }}
                 </button>
             </form>
 
             <footer class="card-footer">
                 <small>
-                    ¿Problemas para entrar? Verifica tu conexión y credenciales.
+                    {{ isRegister ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?" }}
+                    <button type="button" class="linklike" @click="isRegister = !isRegister">
+                        {{ isRegister ? "Inicia sesión aquí" : "Regístrate aquí" }}
+                    </button>
                 </small>
             </footer>
         </div>
@@ -294,5 +333,18 @@ input.invalid {
     margin-top: .75rem;
     text-align: center;
     color: #6b7280;
+}
+
+.linklike {
+    background: none;
+    border: none;
+    color: #7c3aed;
+    font-weight: 700;
+    cursor: pointer;
+    margin-left: .25rem;
+}
+
+.linklike:hover {
+    text-decoration: underline;
 }
 </style>

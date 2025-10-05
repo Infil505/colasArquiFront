@@ -49,10 +49,13 @@ export async function runQueue() {
   return handle(r);
 }
 
-// ------- Lo que faltaba: LOGIN -------
-type LoginBody = { gmail: string; password: string };
-type LoginOk = { _id: string; gmail: string; name: string | null };
+// ------- Auth -------
+export type LoginBody = { gmail: string; password: string };
+export type RegisterBody = { gmail: string; password: string; name?: string };
 
+export type LoginOk = { _id: string; gmail: string; name: string | null };
+
+// Login
 export async function login(body: LoginBody): Promise<LoginOk> {
   const r = await fetch(fn("/login"), {
     method: "POST",
@@ -62,14 +65,26 @@ export async function login(body: LoginBody): Promise<LoginOk> {
   return handle(r);
 }
 
-// (Opcional útil)
+// Registro (usa el mismo endpoint con action: "register")
+export async function register(body: RegisterBody): Promise<LoginOk & { message?: string }> {
+  const r = await fetch(fn("/login"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, action: "register" }),
+  });
+  return handle(r);
+}
+
+// Helpers de sesión en LocalStorage
 export function saveUser(u: LoginOk) {
   localStorage.setItem("auth:user", JSON.stringify(u));
 }
+
 export function getUser(): LoginOk | null {
   const raw = localStorage.getItem("auth:user");
   return raw ? (JSON.parse(raw) as LoginOk) : null;
 }
+
 export function logout() {
   localStorage.removeItem("auth:user");
 }
