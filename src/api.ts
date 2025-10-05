@@ -1,9 +1,9 @@
 // api.ts
-const ORIGIN = import.meta.env.VITE_API_BASE || ""; 
-const FN_BASE = `${ORIGIN}/.netlify/functions`; 
+const ORIGIN = import.meta.env.VITE_API_BASE || "";
+const FN_BASE = `${ORIGIN}/.netlify/functions`;
 
 function fn(path: string) {
-  return `${FN_BASE}${path}`; 
+  return `${FN_BASE}${path}`;
 }
 
 async function handle(res: Response) {
